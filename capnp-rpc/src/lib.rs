@@ -72,6 +72,7 @@ pub use crate::rpc::Disconnector;
 use crate::task_set::TaskSet;
 
 pub use crate::reconnect::{auto_reconnect, lazy_auto_reconnect, SetTarget};
+pub use crate::task_set::Executor;
 
 /// Code generated from
 /// [rpc.capnp](https://github.com/capnproto/capnproto/blob/master/c%2B%2B/src/capnp/rpc.capnp).
@@ -251,31 +252,37 @@ where
 impl<VatId> RpcSystem<VatId> {
     /// Constructs a new `RpcSystem` with the given network and bootstrap capability.
     pub fn new(
+        network: Box<dyn crate::VatNetwork<VatId>>,
+        bootstrap: Option<::capnp::capability::Client>,
+    ) -> Self {
+        Self::with_executor(
+            network,
+            bootstrap,
+            Box::new(crate::task_set::DefaultExecutor::default()),
+        )
+    }
+
+    pub fn with_executor(
         mut network: Box<dyn crate::VatNetwork<VatId>>,
         bootstrap: Option<::capnp::capability::Client>,
+        executor: Box<dyn Executor>,
     ) -> Self {
         let bootstrap_cap = match bootstrap {
             Some(cap) => cap.hook,
             None => broken::new_cap(Error::failed("no bootstrap capability".to_string())),
         };
-        let (mut handle, tasks) = TaskSet::new(Box::new(SystemTaskReaper));
+        let (mut handle, tasks) = TaskSet::with_executor(SystemTaskReaper, executor);
 
         let mut handle1 = handle.clone();
-        handle.add(network.drive_until_shutdown().then(move |r| {
+        handle.add(network.drive_until_shutdown().map(move |r| {
             let r = match r {
                 Ok(()) => Ok(()),
-                Err(e) => {
-                    if e.kind != ::capnp::ErrorKind::Disconnected {
-                        // Don't report disconnects as an error.
-                        Err(e)
-                    } else {
-                        Ok(())
-                    }
-                }
+                Err(e) if e.kind == capnp::ErrorKind::Disconnected => Ok(()),
+                Err(e) => Err(e),
             };
 
             handle1.terminate(r);
-            Promise::ok(())
+            Ok(())
         }));
 
         let mut result = Self {
@@ -306,6 +313,7 @@ impl<VatId> RpcSystem<VatId> {
             self.bootstrap_cap.clone(),
             connection,
             self.handle.clone(),
+            self.tasks.executor().clone_empty(),
         );
 
         let hook = rpc::ConnectionState::bootstrap(&connection_state);
@@ -317,8 +325,15 @@ impl<VatId> RpcSystem<VatId> {
         let connection_state_ref = self.connection_state.clone();
         let bootstrap_cap = self.bootstrap_cap.clone();
         let handle = self.handle.clone();
+        let executor = self.tasks.executor().clone_empty();
         Promise::from_future(self.network.accept().map_ok(move |connection| {
-            Self::get_connection_state(&connection_state_ref, bootstrap_cap, connection, handle);
+            Self::get_connection_state(
+                &connection_state_ref,
+                bootstrap_cap,
+                connection,
+                handle,
+                executor,
+            );
         }))
     }
 
@@ -331,6 +346,7 @@ impl<VatId> RpcSystem<VatId> {
         bootstrap_cap: Box<dyn ClientHook>,
         connection: Box<dyn crate::Connection<VatId>>,
         mut handle: crate::task_set::TaskSetHandle<Error>,
+        executor: Box<dyn Executor>,
     ) -> Rc<rpc::ConnectionState<VatId>> {
         // TODO this needs to be updated once we allow more general VatNetworks.
         let (tasks, result) = match *connection_state_ref.borrow() {
@@ -349,7 +365,12 @@ impl<VatId> RpcSystem<VatId> {
                         Err(e) => Promise::err(Error::failed(format!("{e}"))),
                     }
                 }));
-                rpc::ConnectionState::new(bootstrap_cap, connection, on_disconnect_fulfiller)
+                rpc::ConnectionState::with_executor(
+                    bootstrap_cap,
+                    connection,
+                    on_disconnect_fulfiller,
+                    executor,
+                )
             }
         };
         *connection_state_ref.borrow_mut() = Some(result.clone());
