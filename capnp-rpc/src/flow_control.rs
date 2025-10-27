@@ -65,9 +65,9 @@ impl FixedWindowFlowController {
             empty_fulfiller: None,
         };
         let inner = Rc::new(RefCell::new(inner));
-        let (tasks, task_future) = TaskSet::new(Box::new(Reaper {
+        let (tasks, task_future) = TaskSet::new(Reaper {
             inner: inner.clone(),
-        }));
+        });
         (Self { inner, tasks }, Promise::from_future(task_future))
     }
 }

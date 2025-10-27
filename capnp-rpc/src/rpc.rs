@@ -46,7 +46,7 @@ use crate::rpc_capnp::{
     payload, promised_answer, resolve, return_,
 };
 use crate::task_set::TaskSet;
-use crate::{broken, local, queued};
+use crate::{broken, local, queued, Executor};
 
 pub type QuestionId = u32;
 pub type AnswerId = QuestionId;
@@ -448,10 +448,11 @@ where
 }
 
 impl<VatId> ConnectionState<VatId> {
-    pub fn new(
+    pub(crate) fn with_executor(
         bootstrap_cap: Box<dyn ClientHook>,
         connection: Box<dyn crate::Connection<VatId>>,
         disconnect_fulfiller: oneshot::Sender<Promise<(), Error>>,
+        executor: Box<dyn Executor>,
     ) -> (TaskSet<Error>, Rc<Self>) {
         let state = Rc::new(Self {
             bootstrap_cap,
@@ -467,7 +468,7 @@ impl<VatId> ConnectionState<VatId> {
             client_downcast_map: RefCell::new(HashMap::new()),
         });
         let (mut handle, tasks) =
-            TaskSet::new(Box::new(ConnectionErrorHandler::new(Rc::downgrade(&state))));
+            TaskSet::with_executor(ConnectionErrorHandler::new(Rc::downgrade(&state)), executor);
 
         handle.add(Self::message_loop(Rc::downgrade(&state)));
         *state.tasks.borrow_mut() = Some(handle);
