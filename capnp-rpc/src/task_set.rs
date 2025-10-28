@@ -35,7 +35,7 @@ enum EnqueuedTask<E> {
 }
 
 #[must_use = "a TaskSet does nothing unless polled"]
-pub struct TaskSet<E> {
+pub(crate) struct TaskSet<E> {
     enqueued: Option<mpsc::UnboundedReceiver<EnqueuedTask<E>>>,
     completed_tasks_tx: mpsc::UnboundedSender<()>,
     completed_tasks_rx: mpsc::UnboundedReceiver<()>,
@@ -52,8 +52,7 @@ where
 {
     pub(crate) fn new(reaper: impl TaskReaper<E> + 'static) -> (TaskSetHandle<E>, Self)
     where
-        E: 'static,
-        E: ::std::fmt::Debug,
+        E: std::fmt::Debug,
     {
         Self::with_executor(reaper, Box::new(DefaultExecutor::default()))
     }
@@ -100,7 +99,7 @@ where
 }
 
 #[derive(Clone)]
-pub struct TaskSetHandle<E> {
+pub(crate) struct TaskSetHandle<E> {
     sender: mpsc::UnboundedSender<EnqueuedTask<E>>,
 }
 
@@ -108,20 +107,20 @@ impl<E> TaskSetHandle<E>
 where
     E: 'static,
 {
-    pub fn add<F>(&mut self, f: F)
+    pub(crate) fn add<F>(&mut self, f: F)
     where
         F: Future<Output = Result<(), E>> + 'static,
     {
         let _ = self.sender.unbounded_send(EnqueuedTask::Task(Box::pin(f)));
     }
 
-    pub fn terminate(&mut self, result: Result<(), E>) {
+    pub(crate) fn terminate(&mut self, result: Result<(), E>) {
         let _ = self.sender.unbounded_send(EnqueuedTask::Terminate(result));
     }
 
     /// Returns a future that finishes at the next time when the task set
     /// is empty. If the task set is terminated, the oneshot will be canceled.
-    pub fn on_empty(&mut self) -> oneshot::Receiver<()> {
+    pub(crate) fn on_empty(&mut self) -> oneshot::Receiver<()> {
         let (s, r) = oneshot::channel();
         let _ = self.sender.unbounded_send(EnqueuedTask::OnEmpty(s));
         r
@@ -130,7 +129,7 @@ where
 
 /// For a specific kind of task, `TaskReaper` defines the procedure that should
 /// be invoked when it succeeds or fails.
-pub trait TaskReaper<E>
+pub(crate) trait TaskReaper<E>
 where
     E: 'static,
 {
