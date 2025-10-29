@@ -256,6 +256,25 @@ where
     }
 }
 
+#[cfg(feature = "smallvec")]
+impl<I, const N: usize> ReaderSegments for smallvec::SmallVec<[I; N]>
+where
+    I: AsRef<[u8]>,
+    [I; N]: smallvec::Array<Item = I>,
+{
+    fn get_segment(&self, idx: u32) -> Option<&[u8]> {
+        self.get(idx as usize).map(|o| o.as_ref())
+    }
+
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
+}
+
 /// A container used to read a message.
 pub struct Reader<S>
 where
@@ -300,10 +319,7 @@ where
     pub fn is_canonical(&self) -> Result<bool> {
         let (segment_start, seg_len) = self.arena.get_segment(0)?;
 
-        if self.arena.get_segment(1).is_ok() {
-            // TODO(cleanup, apibump): should there be a nicer way to ask the arena how many
-            // segments there are?
-
+        if self.arena.segments_count() > 1 {
             // There is more than one segment, so the message cannot be canonical.
             return Ok(false);
         }

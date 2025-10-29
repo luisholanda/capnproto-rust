@@ -86,6 +86,10 @@ where
     pub(crate) fn get_segments(&self) -> &S {
         &self.segments
     }
+
+    pub(crate) fn segments_count(&self) -> usize {
+        self.segments.len()
+    }
 }
 
 impl<S> ReaderArena for ReaderArenaImpl<S>
@@ -185,8 +189,18 @@ struct BuilderSegment {
     allocated: u32,
 }
 
-#[cfg(feature = "alloc")]
+#[cfg(all(feature = "alloc", not(feature = "smallvec")))]
 type BuilderSegmentArray = alloc::vec::Vec<BuilderSegment>;
+
+#[cfg(feature = "smallvec")]
+type BuilderSegmentArray = smallvec::SmallVec<[BuilderSegment; 1]>;
+
+#[cfg(feature = "smallvec")]
+const _ASSERT_VEC_SIZED: () = {
+    if std::mem::size_of::<BuilderSegmentArray>() != std::mem::size_of::<Vec<BuilderSegment>>() {
+        panic!("BuilderSegmentArray should have the same size as Vec<BuilderSegment>");
+    }
+};
 
 #[cfg(not(feature = "alloc"))]
 #[derive(Default)]
@@ -276,9 +290,7 @@ where
 
     pub fn get_segments_for_output(&self) -> OutputSegments<'_> {
         let reff = &self.inner;
-        if reff.segments.len() == 1 {
-            let seg = &reff.segments[0];
-
+        if let Some((seg, [])) = reff.segments.split_first() {
             // The user must mutably borrow the `message::Builder` to be able to modify segment memory.
             // No such borrow will be possible while `self` is still immutably borrowed from this method,
             // so returning this slice is safe.
