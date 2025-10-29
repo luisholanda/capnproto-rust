@@ -422,28 +422,6 @@ impl Clone for Client {
     }
 }
 
-/// The return value of Server::dispatch_call().
-#[cfg(feature = "alloc")]
-pub struct DispatchCallResult {
-    /// Promise for completion of the call.
-    pub promise: Promise<(), Error>,
-
-    /// If true, this method was declared as `-> stream;`. If this call throws
-    /// an exception, then all future calls on the capability will throw the
-    /// same exception.
-    pub is_streaming: bool,
-}
-
-#[cfg(feature = "alloc")]
-impl DispatchCallResult {
-    pub fn new(promise: Promise<(), Error>, is_streaming: bool) -> Self {
-        Self {
-            promise,
-            is_streaming,
-        }
-    }
-}
-
 /// Type alias that allows us to avoid using `alloc` directly in generated code,
 /// which would require an `extern crate alloc` in the crate root.
 #[cfg(feature = "alloc")]
@@ -458,7 +436,7 @@ pub trait Server {
         method_id: u16,
         params: Params<any_pointer::Owned>,
         results: Results<any_pointer::Owned>,
-    ) -> DispatchCallResult;
+    ) -> impl Future<Output = (Result<(), Error>, bool)>;
 
     fn as_ptr(&self) -> usize;
 }

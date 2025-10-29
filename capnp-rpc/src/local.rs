@@ -412,14 +412,15 @@ where
         // This currently relies on the task scheduler being first-in-first-out.
         let inner = self.inner.clone();
         Promise::from_future(async move {
-            let f = inner.dispatch_call(
-                interface_id,
-                method_id,
-                ::capnp::capability::Params::new(params),
-                ::capnp::capability::Results::new(results),
-            );
-            let result = f.promise.await;
-            if let (true, Err(e)) = (f.is_streaming, &result) {
+            let (result, is_streaming) = inner
+                .dispatch_call(
+                    interface_id,
+                    method_id,
+                    ::capnp::capability::Params::new(params),
+                    ::capnp::capability::Results::new(results),
+                )
+                .await;
+            if let (true, Err(e)) = (is_streaming, &result) {
                 *streaming_error.borrow_mut() = Some(e.clone());
             }
             result

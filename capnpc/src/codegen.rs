@@ -2592,7 +2592,7 @@ fn generate_node(
                 if result_id != STREAM_RESULT_ID {
                     dispatch_arms.push(
                         Line(fmt!(ctx,
-                                  "{ordinal} => {capnp}::capability::DispatchCallResult::new({capnp}::capability::Promise::from_future(this.{}({capnp}::private::capability::internal_get_typed_params(params), {capnp}::private::capability::internal_get_typed_results(results))), false),",
+                                  "{ordinal} => (this.{}({capnp}::private::capability::internal_get_typed_params(params), {capnp}::private::capability::internal_get_typed_results(results)).await, false),",
                                   module_name(name))));
 
                     let result_node = &ctx.node_map[&result_id];
@@ -2647,8 +2647,7 @@ fn generate_node(
                     // It's a streaming method.
                     dispatch_arms.push(
                         Line(fmt!(ctx,
-                                  "{ordinal} => {capnp}::capability::DispatchCallResult::new({capnp}::capability::Promise::from_future(this.{}({capnp}::private::capability::internal_get_typed_params(params))), true),",
-
+                                  "{ordinal} => (this.{}({capnp}::private::capability::internal_get_typed_params(params)).await, true),",
                                   module_name(name))));
 
                     server_interior.push(
@@ -2706,7 +2705,7 @@ fn generate_node(
                     let the_mod = ctx.get_qualified_module(type_id);
 
                     base_dispatch_arms.push(Line(format!(
-                        "0x{type_id:x} => {}::dispatch_call_internal(self.server, method_id, params, results),",
+                        "0x{type_id:x} => {}::dispatch_call_internal(self.server, method_id, params, results).await,",
                         do_branding(
                             ctx, type_id, brand, Leaf::ServerDispatch, &the_mod)?)));
                     base_traits.push(do_branding(ctx, type_id, brand, Leaf::Server, &the_mod)?);
@@ -2902,11 +2901,11 @@ fn generate_node(
                     } else {
                         Line(fmt!(ctx,"impl <_T: Server> {capnp}::capability::Server for ServerDispatch<_T> {{"))
                     }),
-                    indent(Line(fmt!(ctx,"fn dispatch_call(self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> {capnp}::capability::DispatchCallResult {{"))),
+                    indent(Line(fmt!(ctx,"async fn dispatch_call(self, interface_id: u64, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> (Result<(), {capnp}::Error>, bool) {{"))),
                     indent(indent(line("match interface_id {"))),
-                    indent(indent(indent(line("_private::TYPE_ID => Self::dispatch_call_internal(self.server, method_id, params, results),")))),
+                    indent(indent(indent(line("_private::TYPE_ID => Self::dispatch_call_internal(self.server, method_id, params, results).await,")))),
                     indent(indent(indent(base_dispatch_arms))),
-                    indent(indent(indent(Line(fmt!(ctx,"_ => {{ {capnp}::capability::DispatchCallResult::new({capnp}::capability::Promise::err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string())), false) }}"))))),
+                    indent(indent(indent(Line(fmt!(ctx,"_ => {{ (Err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string())), false) }}"))))),
                     indent(indent(line("}"))),
                     indent(line("}")),
 
@@ -2922,10 +2921,10 @@ fn generate_node(
                         line("impl <_T :Server> ServerDispatch<_T> {")
                     }),
 
-                    indent(Line(fmt!(ctx,"pub fn dispatch_call_internal(this: {capnp}::capability::Rc<_T>, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> {capnp}::capability::DispatchCallResult {{"))),
+                    indent(Line(fmt!(ctx,"pub async fn dispatch_call_internal(this: {capnp}::capability::Rc<_T>, method_id: u16, params: {capnp}::capability::Params<{capnp}::any_pointer::Owned>, results: {capnp}::capability::Results<{capnp}::any_pointer::Owned>) -> (Result<(), {capnp}::Error>, bool) {{"))),
                     indent(indent(line("match method_id {"))),
                     indent(indent(indent(dispatch_arms))),
-                    indent(indent(indent(Line(fmt!(ctx,"_ => {{ {capnp}::capability::DispatchCallResult::new({capnp}::capability::Promise::err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string())), false) }}"))))),
+                    indent(indent(indent(Line(fmt!(ctx,"_ => {{ (Err({capnp}::Error::unimplemented(\"Method not implemented.\".to_string())), false) }}"))))),
                     indent(indent(line("}"))),
                     indent(line("}")),
                     line("}")]));
