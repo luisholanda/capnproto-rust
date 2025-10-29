@@ -398,11 +398,12 @@ where
         params: Box<dyn ParamsHook>,
         results: Box<dyn ResultsHook>,
     ) -> Promise<(), Error> {
-        let streaming_error = self.broken_error.clone();
-        if let Some(e) = &*streaming_error.borrow() {
+        if let Some(e) = &*self.broken_error.borrow() {
             // Previous streaming call threw, so everything fails from now on.
             return Promise::err(e.clone());
         }
+
+        let streaming_error = self.broken_error.clone();
 
         // We don't want to actually dispatch the call synchronously, because we don't want the callee
         // to have any side effects before the promise is returned to the caller.  This helps avoid
