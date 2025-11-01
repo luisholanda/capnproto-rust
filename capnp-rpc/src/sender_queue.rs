@@ -20,7 +20,6 @@
 // THE SOFTWARE.
 
 use futures::channel::oneshot;
-use futures::{FutureExt, TryFutureExt};
 
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
@@ -41,7 +40,7 @@ where
 
 /// A queue representing tasks that consume input of type `In` and produce output of
 /// type `Out`.
-pub struct SenderQueue<In, Out>
+pub(crate) struct SenderQueue<In, Out>
 where
     In: 'static,
     Out: 'static,
@@ -76,7 +75,7 @@ where
     In: 'static,
     Out: 'static,
 {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             inner: Rc::new(RefCell::new(Inner {
                 next_id: 0,
@@ -88,7 +87,7 @@ where
     /// Pushes `value` to the queue, returning a promise that resolves after
     /// `value` is consumed on the other end of the queue. If the returned promised
     /// is dropped, then `value` is removed from the queue.
-    pub fn push(&mut self, value: In) -> Promise<Out, Error> {
+    pub(crate) fn push(&mut self, value: In) -> Promise<Out, Error> {
         let weak_inner = Rc::downgrade(&self.inner);
         let Inner {
             ref mut next_id,
@@ -105,16 +104,15 @@ where
 
         *next_id += 1;
 
-        Promise::from_future(rx.map_err(|_| Error::failed("SenderQueue canceled")).map(
-            move |out| {
-                drop(remover);
-                out
-            },
-        ))
+        Promise::from_future(async {
+            rx.await
+                .map_err(|_| Error::failed("SenderQueue canceled"))
+                .inspect(|_| drop(remover))
+        })
     }
 
     /// Pushes `values` to the queue.
-    pub fn push_detach(&mut self, value: In) {
+    pub(crate) fn push_detach(&mut self, value: In) {
         let Inner {
             ref mut next_id,
             ref mut map,
@@ -125,7 +123,7 @@ where
         *next_id += 1;
     }
 
-    pub fn drain(&mut self) -> Drain<In, Out> {
+    pub(crate) fn drain(&mut self) -> Drain<In, Out> {
         let Inner {
             ref mut next_id,
             ref mut map,
@@ -139,7 +137,7 @@ where
     }
 }
 
-pub struct Drain<In, Out>
+pub(crate) struct Drain<In, Out>
 where
     In: 'static,
     Out: 'static,

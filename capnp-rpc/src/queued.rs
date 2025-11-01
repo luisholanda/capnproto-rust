@@ -54,9 +54,10 @@ impl PipelineInner {
             Err(e) => Box::new(broken::Pipeline::new(e)),
         };
 
-        this.borrow_mut().redirect = Some(pipeline.add_ref());
+        let mut this = this.borrow_mut();
+        this.redirect = Some(pipeline.add_ref());
 
-        for ((weak_client, ops), waiter) in this.borrow_mut().clients_to_resolve.drain() {
+        for ((weak_client, ops), waiter) in this.clients_to_resolve.drain() {
             if let Some(client) = weak_client.upgrade() {
                 let clienthook = pipeline.get_pipelined_cap_move(ops);
                 ClientInner::resolve(&client, Ok(clienthook));
@@ -64,7 +65,7 @@ impl PipelineInner {
             let _ = waiter.send(());
         }
 
-        this.borrow_mut().promise_to_drive = Promise::ok(()).shared();
+        this.promise_to_drive = Promise::ok(()).shared();
     }
 }
 
@@ -134,12 +135,12 @@ impl Pipeline {
     where
         F: Future<Output = Result<(), Error>> + 'static + Unpin,
     {
+        let mut inner = self.inner.borrow_mut();
         let new = Promise::from_future(
-            futures::future::try_join(self.inner.borrow_mut().promise_to_drive.clone(), promise)
-                .map_ok(|_| ()),
+            futures::future::try_join(inner.promise_to_drive.clone(), promise).map_ok(|_| ()),
         )
         .shared();
-        self.inner.borrow_mut().promise_to_drive = new;
+        inner.promise_to_drive = new;
     }
 }
 

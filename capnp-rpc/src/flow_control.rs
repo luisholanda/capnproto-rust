@@ -47,7 +47,7 @@ impl TaskReaper<Error> for Reaper {
     fn task_failed(&mut self, error: Error) {
         let mut inner = self.inner.borrow_mut();
         if let State::Running(ref mut blocked_sends) = &mut inner.state {
-            for s in std::mem::take(blocked_sends) {
+            for s in blocked_sends.drain(..) {
                 let _ = s.send(Err(error.clone()));
             }
             inner.state = State::Failed(error)
@@ -125,19 +125,16 @@ impl crate::FlowController for FixedWindowFlowController {
         let mut inner = self.inner.borrow_mut();
         let is_ready = inner.is_ready();
         match inner.state {
+            State::Running(_) if is_ready => Promise::ok(()),
             State::Running(ref mut blocked_sends) => {
-                if is_ready {
-                    Promise::ok(())
-                } else {
-                    let (snd, rcv) = oneshot::channel();
-                    blocked_sends.push(snd);
-                    Promise::from_future(async {
-                        match rcv.await {
-                            Ok(r) => r,
-                            Err(e) => Err(crate::canceled_to_error(e)),
-                        }
-                    })
-                }
+                let (snd, rcv) = oneshot::channel();
+                blocked_sends.push(snd);
+                Promise::from_future(async {
+                    match rcv.await {
+                        Ok(r) => r,
+                        Err(e) => Err(crate::canceled_to_error(e)),
+                    }
+                })
             }
             State::Failed(ref e) => Promise::err(e.clone()),
         }
