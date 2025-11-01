@@ -84,10 +84,7 @@ pub(crate) fn convert_io_err(err: std::io::Error) -> capnp::Error {
         | io::ErrorKind::NotConnected => capnp::ErrorKind::Disconnected,
         _ => capnp::ErrorKind::Failed,
     };
-    capnp::Error {
-        extra: format!("{err}"),
-        kind,
-    }
+    capnp::Error::from_kind(kind).with_reason(err.to_string())
 }
 
 fn run_command(

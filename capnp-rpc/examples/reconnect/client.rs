@@ -40,7 +40,7 @@ async fn try_main(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
         .await
         .err()
         .ok_or("Unexpected success")?;
-    if err.kind != capnp::ErrorKind::Disconnected {
+    if err.kind() != capnp::ErrorKind::Disconnected {
         return Err(err.into());
     }
     // Retry failed request because auto_reconnect will make the connection again

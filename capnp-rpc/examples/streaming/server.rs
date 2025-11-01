@@ -80,7 +80,7 @@ impl receiver::Server for ReceiverImpl {
                 results.get().set_sha256(&v[..]);
                 Ok(())
             }
-            Err(_) => Err(Error::failed("failed to get hash".into())),
+            Err(_) => Err(Error::failed("failed to get hash")),
         }
     }
 }

@@ -296,7 +296,7 @@ impl Export {
             refcount: 1,
             canonical: false,
             client_hook,
-            resolve_op: Promise::err(Error::failed("no resolve op".to_string())),
+            resolve_op: Promise::err(Error::failed("no resolve op")),
         }
     }
 }
@@ -356,7 +356,7 @@ fn to_pipeline_ops(
 }
 
 fn from_error(error: &Error, mut builder: exception::Builder) {
-    let typ = match error.kind {
+    let typ = match error.kind() {
         ::capnp::ErrorKind::Failed => exception::Type::Failed,
         ::capnp::ErrorKind::Overloaded => exception::Type::Overloaded,
         ::capnp::ErrorKind::Disconnected => exception::Type::Disconnected,
@@ -367,12 +367,12 @@ fn from_error(error: &Error, mut builder: exception::Builder) {
         _ => exception::Type::Failed,
     };
     builder.set_type(typ);
-    match error.kind {
+    match error.kind() {
         ::capnp::ErrorKind::Failed
         | ::capnp::ErrorKind::Overloaded
         | ::capnp::ErrorKind::Disconnected
         | ::capnp::ErrorKind::Unimplemented => {
-            builder.set_reason(&error.extra);
+            builder.set_reason(error.reason());
         }
         _ => {
             // There is extra information in `error.kind` that is not
@@ -380,6 +380,13 @@ fn from_error(error: &Error, mut builder: exception::Builder) {
             // information to be recorded in the `reason` field.
             builder.set_reason(error.to_string());
         }
+    }
+
+    let mut details = builder.init_details(error.details().count() as _);
+    for (idx, (id, data)) in error.details().enumerate() {
+        let mut d = details.reborrow().get(idx as u32);
+        d.set_detail_id(id);
+        d.set_data(data);
     }
 }
 
@@ -398,10 +405,27 @@ fn remote_exception_to_error(exception: exception::Reader) -> Error {
     let reason_str = reason
         .to_str()
         .unwrap_or("<malformed utf-8 in error reason>");
-    Error {
-        extra: format!("remote exception: {reason_str}"),
-        kind,
+
+    let mut err =
+        Error::from_kind(kind).with_reason(if reason_str.starts_with("remote exception: ") {
+            reason_str.to_string()
+        } else {
+            format!("remote exception: {reason_str}")
+        });
+
+    let Ok(d) = exception.get_details() else {
+        return err;
+    };
+
+    for detail in d {
+        if let Ok(data) = detail.get_data() {
+            if !data.is_empty() {
+                err.set_details(detail.get_detail_id(), data.to_vec());
+            }
+        }
     }
+
+    err
 }
 
 pub struct ConnectionErrorHandler<VatId>
@@ -575,16 +599,11 @@ impl<VatId> ConnectionState<VatId> {
         let Ok(mut c) = connection else {
             unreachable!()
         };
-        let promise = c.shutdown(Err(error)).then(|r| match r {
-            Ok(()) => Promise::ok(()),
-            Err(e) => {
-                if e.kind != ::capnp::ErrorKind::Disconnected {
-                    // Don't report disconnects as an error.
-                    Promise::err(e)
-                } else {
-                    Promise::ok(())
-                }
-            }
+        let promise = c.shutdown(Err(error)).map(|r| match r {
+            Ok(()) => Ok(()),
+            // Don't report disconnects as an error.
+            Err(e) if e.kind() == capnp::ErrorKind::Disconnected => Ok(()),
+            Err(e) => Err(e),
         });
         let Some(fulfiller) = self.disconnect_fulfiller.borrow_mut().take() else {
             unreachable!()
@@ -663,7 +682,7 @@ impl<VatId> ConnectionState<VatId> {
     fn message_loop(weak_state: Weak<Self>) -> Promise<(), capnp::Error> {
         let Some(state) = weak_state.upgrade() else {
             return Promise::err(Error::disconnected(
-                "message loop cannot continue without a connection".into(),
+                "message loop cannot continue without a connection",
             ));
         };
 
@@ -685,7 +704,7 @@ impl<VatId> ConnectionState<VatId> {
                     weak_state
                         .upgrade()
                         .expect("message loop outlived connection state?")
-                        .disconnect(Error::disconnected("Peer disconnected.".to_string()));
+                        .disconnect(Error::disconnected("Peer disconnected."));
                 }
             }
             Ok(())
@@ -724,7 +743,7 @@ impl<VatId> ConnectionState<VatId> {
                         cap_descriptor::ReceiverAnswer(_) | cap_descriptor::ReceiverHosted(_) => (),
                         cap_descriptor::ThirdPartyHosted(_) => {
                             return Err(Error::failed(
-                                "Peer claims we resolved a ThirdPartyHosted cap.".to_string(),
+                                "Peer claims we resolved a ThirdPartyHosted cap.",
                             ));
                         }
                     },
@@ -733,7 +752,7 @@ impl<VatId> ConnectionState<VatId> {
             }
             _ => {
                 return Err(Error::failed(
-                    "Peer did not implement required RPC message type.".to_string(),
+                    "Peer did not implement required RPC message type.",
                 ));
             }
         }
@@ -777,7 +796,7 @@ impl<VatId> ConnectionState<VatId> {
         let slots = &mut connection_state.answers.borrow_mut().slots;
         let hash_map::Entry::Vacant(slot) = slots.entry(answer_id) else {
             connection_state.release_exports(&result_exports)?;
-            return Err(Error::failed("questionId is already in use".to_string()));
+            return Err(Error::failed("questionId is already in use"));
         };
         let mut answer = Answer::new();
         answer.return_has_been_sent = true;
@@ -830,9 +849,7 @@ impl<VatId> ConnectionState<VatId> {
             resolve::Cap(c) => match Self::receive_cap(connection_state, c?)? {
                 Some(cap) => Ok(cap),
                 None => {
-                    return Err(Error::failed(
-                        "'Resolve' contained 'CapDescriptor.none'.".to_string(),
-                    ));
+                    return Err(Error::failed("'Resolve' contained 'CapDescriptor.none'."));
                 }
             },
             resolve::Exception(e) => {
@@ -854,9 +871,7 @@ impl<VatId> ConnectionState<VatId> {
                     }
                 }
                 None => {
-                    return Err(Error::failed(
-                        "Got 'Resolve' for a non-promise import.".to_string(),
-                    ));
+                    return Err(Error::failed("Got 'Resolve' for a non-promise import."));
                 }
             }
         }
@@ -878,7 +893,7 @@ impl<VatId> ConnectionState<VatId> {
                 if target.get_brand() != connection_state.get_brand() {
                     return Err(Error::failed(
                         "'Disembargo' of type 'senderLoopback' sent to an object that does not point \
-                         back to the sender.".to_string()));
+                         back to the sender."));
                 }
 
                 let connection_state_ref = connection_state.clone();
@@ -903,8 +918,7 @@ impl<VatId> ConnectionState<VatId> {
                                 return Err(Error::failed(
                                     "'Disembargo' of type 'senderLoopback' sent to an object that \
                                      does not appear to have been the subject of a previous \
-                                     'Resolve' message."
-                                        .to_string(),
+                                     'Resolve' message.",
                                 ));
                             }
                         }
@@ -920,14 +934,14 @@ impl<VatId> ConnectionState<VatId> {
                     let _ = fulfiller.send(Ok(()));
                 } else {
                     return Err(Error::failed(
-                        "Invalid embargo ID in `Disembargo.context.receiverLoopback".to_string(),
+                        "Invalid embargo ID in `Disembargo.context.receiverLoopback",
                     ));
                 }
                 connection_state.embargoes.borrow_mut().erase(embargo_id);
             }
             disembargo::context::Accept(_) => {
                 return Err(Error::unimplemented(
-                    "Disembargo::Context::Accept not implemented".to_string(),
+                    "Disembargo::Context::Accept not implemented",
                 ));
             }
         }
@@ -940,7 +954,7 @@ impl<VatId> ConnectionState<VatId> {
     ) -> ::capnp::Result<()> {
         let Some(connection_state) = weak_state.upgrade() else {
             return Err(Error::disconnected(
-                "handle_message() cannot continue without a connection".into(),
+                "handle_message() cannot continue without a connection",
             ));
         };
 
@@ -961,9 +975,7 @@ impl<VatId> ConnectionState<VatId> {
                         call::send_results_to::Caller(()) => false,
                         call::send_results_to::Yourself(()) => true,
                         call::send_results_to::ThirdParty(_) => {
-                            return Err(Error::failed(
-                                "Unsupported `Call.sendResultsTo`.".to_string(),
-                            ))
+                            return Err(Error::failed("Unsupported `Call.sendResultsTo`."))
                         }
                     };
                     let payload = call.get_params()?;
@@ -1017,7 +1029,7 @@ impl<VatId> ConnectionState<VatId> {
                 {
                     let slots = &mut connection_state.answers.borrow_mut().slots;
                     let hash_map::Entry::Vacant(slot) = slots.entry(question_id) else {
-                        return Err(Error::failed("questionId is already in use".to_string()));
+                        return Err(Error::failed("questionId is already in use"));
                     };
                     slot.insert(answer);
                 }
@@ -1114,12 +1126,11 @@ impl<VatId> ConnectionState<VatId> {
                                             tmp.borrow_mut().fulfill(res);
                                         } else {
                                             return Err(Error::failed("return.takeFromOtherQuestion referenced a call that \
-                                                     did not use sendResultsTo.yourself.".to_string()));
+                                                     did not use sendResultsTo.yourself."));
                                         }
                                     } else {
                                         return Err(Error::failed(
-                                            "return.takeFromOtherQuestion had invalid answer ID."
-                                                .to_string(),
+                                            "return.takeFromOtherQuestion had invalid answer ID.",
                                         ));
                                     }
                                 }
@@ -1191,14 +1202,10 @@ impl<VatId> ConnectionState<VatId> {
     fn release_export(&self, id: ExportId, refcount: u32) -> ::capnp::Result<()> {
         let mut exports = self.exports.borrow_mut();
         let Some(e) = exports.find(id) else {
-            return Err(Error::failed(
-                "Tried to release invalid export ID.".to_string(),
-            ));
+            return Err(Error::failed("Tried to release invalid export ID."));
         };
         if refcount > e.refcount {
-            return Err(Error::failed(
-                "Tried to drop export's refcount below zero.".to_string(),
-            ));
+            return Err(Error::failed("Tried to drop export's refcount below zero."));
         }
         e.refcount -= refcount;
         if e.refcount == 0 {
@@ -1230,9 +1237,7 @@ impl<VatId> ConnectionState<VatId> {
             message_target::ImportedCap(export_id) => {
                 match self.exports.borrow().slots.get(export_id as usize) {
                     Some(Some(exp)) => Ok(exp.client_hook.clone()),
-                    _ => Err(Error::failed(
-                        "Message target is not a current export ID.".to_string(),
-                    )),
+                    _ => Err(Error::failed("Message target is not a current export ID.")),
                 }
             }
             message_target::PromisedAnswer(promised_answer) => {
@@ -1241,7 +1246,7 @@ impl<VatId> ConnectionState<VatId> {
 
                 let pipeline = match self.answers.borrow().slots.get(&question_id) {
                     None => Box::new(broken::Pipeline::new(Error::failed(
-                        "Pipeline call on a request that returned no capabilities or was already closed.".to_string(),
+                        "Pipeline call on a request that returned no capabilities or was already closed.",
                     ))) as Box<dyn PipelineHook>,
                     Some(base) => {
                         match base.pipeline {
@@ -1249,7 +1254,7 @@ impl<VatId> ConnectionState<VatId> {
                             None => Box::new(broken::Pipeline::new(Error::failed(
                                 "Pipeline call on a request that returned not capabilities or was \
                                  already closed."
-                                    .to_string(),
+                                    ,
                             ))) as Box<dyn PipelineHook>,
                         }
                     }
@@ -1328,7 +1333,7 @@ impl<VatId> ConnectionState<VatId> {
                     // asynchronous resolution task (i.e. this code) is canceled.
                     let mut exports = connection_state.exports.borrow_mut();
                     let Some(exp) = exports.find(export_id) else {
-                        return Err(Error::failed("export table entry not found".to_string()));
+                        return Err(Error::failed("export table entry not found"));
                     };
 
                     if exp.canonical {
@@ -1575,7 +1580,7 @@ impl<VatId> ConnectionState<VatId> {
                     Ok(Some(exp.client_hook.add_ref()))
                 } else {
                     Ok(Some(broken::new_cap(Error::failed(
-                        "invalid 'receiverHosted' export ID".to_string(),
+                        "invalid 'receiverHosted' export ID",
                     ))))
                 }
             }
@@ -1589,11 +1594,11 @@ impl<VatId> ConnectionState<VatId> {
                     }
                 }
                 Ok(Some(broken::new_cap(Error::failed(
-                    "invalid 'receiver answer'".to_string(),
+                    "invalid 'receiver answer'",
                 ))))
             }
             cap_descriptor::ThirdPartyHosted(_third_party_hosted) => Err(Error::unimplemented(
-                "ThirdPartyHosted caps are not supported.".to_string(),
+                "ThirdPartyHosted caps are not supported.",
             )),
         }
     }
@@ -1897,7 +1902,7 @@ where
         let mut flow = flow.borrow_mut();
         if flow.is_none() {
             match connection_state.connection.borrow_mut().as_mut() {
-                Err(_) => return Promise::err(Error::failed("no connection".into())),
+                Err(_) => return Promise::err(Error::failed("no connection")),
                 Ok(connection) => {
                     let (s, p) = connection.new_stream();
                     connection_state.add_task(p);
@@ -2166,7 +2171,7 @@ impl<VatId> Pipeline<VatId> {
             let resolve_self_promise =
                 connection_state.eagerly_evaluate(fork.clone().then(move |response| {
                     let Some(state) = this.upgrade() else {
-                        return Promise::err(Error::failed("dangling reference to this".into()));
+                        return Promise::err(Error::failed("dangling reference to this"));
                     };
                     PipelineState::resolve(&state, response);
                     Promise::ok(())
@@ -2427,7 +2432,7 @@ impl<VatId> ResultsHook for Results<VatId> {
             unreachable!();
         };
         let Some(sender) = inner.pipeline_sender.take() else {
-            return Err(Error::failed("set_pipeline() called twice".into()));
+            return Err(Error::failed("set_pipeline() called twice"));
         };
         sender.complete(Box::new(local::Pipeline::new(hook)));
         Ok(())
@@ -3257,7 +3262,7 @@ impl PipelineHook for SingleCapPipeline {
         if ops.is_empty() {
             self.cap.add_ref()
         } else {
-            broken::new_cap(Error::failed("Invalid pipeline transform.".to_string()))
+            broken::new_cap(Error::failed("Invalid pipeline transform."))
         }
     }
 }

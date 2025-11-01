@@ -90,7 +90,7 @@ impl Drop for PipelineInnerSender {
                     PipelineInner::resolve(
                         &pipeline_inner,
                         Ok(Box::new(crate::broken::Pipeline::new(Error::failed(
-                            "PipelineInnerSender was canceled".into(),
+                            "PipelineInnerSender was canceled",
                         )))),
                     );
                 }

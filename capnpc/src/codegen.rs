@@ -529,15 +529,14 @@ fn name_annotation_value(annotation: schema_capnp::annotation::Reader<'_>) -> ca
         for c in name.chars() {
             if !(c == '_' || c.is_alphanumeric()) {
                 return Err(capnp::Error::failed(
-                    "rust.name annotation value must only contain alphanumeric characters and '_'"
-                        .to_string(),
+                    "rust.name annotation value must only contain alphanumeric characters and '_'",
                 ));
             }
         }
         Ok(name)
     } else {
         Err(capnp::Error::failed(
-            "expected rust.name annotation value to be of type Text".to_string(),
+            "expected rust.name annotation value to be of type Text",
         ))
     }
 }
@@ -566,7 +565,7 @@ fn get_parent_module(annotation: schema_capnp::annotation::Reader) -> capnp::Res
         Ok(module.split("::").map(|x| x.to_string()).collect())
     } else {
         Err(capnp::Error::failed(
-            "expected rust.parentModule annotation value to be of type Text".to_string(),
+            "expected rust.parentModule annotation value to be of type Text",
         ))
     }
 }
@@ -604,7 +603,7 @@ fn is_option_field(field: schema_capnp::field::Reader) -> capnp::Result<bool> {
         };
         if !supported {
             return Err(capnp::Error::failed(
-                "$Rust.option annotation only supported on pointer fields (support for optional interfaces isn't implemented yet)".to_string(),
+                "$Rust.option annotation only supported on pointer fields (support for optional interfaces isn't implemented yet)",
             ));
         }
     }
@@ -643,7 +642,7 @@ fn prim_default(value: &schema_capnp::value::Reader) -> ::capnp::Result<Option<S
             _ => Ok(Some(format!("{}u64", f.to_bits()))),
         },
         _ => Err(Error::failed(
-            "Non-primitive value found where primitive was expected.".to_string(),
+            "Non-primitive value found where primitive was expected.",
         )),
     }
 }
@@ -854,7 +853,7 @@ pub fn getter_text(
                         fmt!(ctx,"{capnp}::traits::FromPointerBuilder::get_from_pointer(self.{member}.get_pointer_field({offset}), ::core::option::Option::None)")
                     }
                 }
-                _ => return Err(Error::failed("default value was of wrong type".to_string())),
+                _ => return Err(Error::failed("default value was of wrong type")),
             };
 
             let getter_code = if should_get_option {
@@ -975,9 +974,7 @@ fn zero_fields_of_group(
             }
             Ok(Branch(result))
         }
-        _ => Err(Error::failed(
-            "zero_fields_of_group() expected a struct".to_string(),
-        )),
+        _ => Err(Error::failed("zero_fields_of_group() expected a struct")),
     }
 }
 
@@ -1163,7 +1160,7 @@ fn generate_setter(
                                     "self.builder.set_data_field_mask::<u16>({offset}, value as u16, {d});"
                                 )));
                             }
-                            _ => return Err(Error::failed("enum default not an Enum".to_string())),
+                            _ => return Err(Error::failed("enum default not an Enum")),
                         }
                     };
                     (Some(the_mod), None)
@@ -1219,7 +1216,7 @@ fn generate_setter(
                         (None, Some(fmt!(ctx, "{capnp}::any_pointer::Builder<'a>")))
                     }
                 }
-                _ => return Err(Error::failed("unrecognized type".to_string())),
+                _ => return Err(Error::failed("unrecognized type")),
             }
         }
     };
@@ -1269,7 +1266,7 @@ fn used_params_of_group(
             }
             Ok(())
         }
-        _ => Err(Error::failed("not a group".to_string())),
+        _ => Err(Error::failed("not a group")),
     }
 }
 
@@ -1632,7 +1629,7 @@ fn generate_get_field_types(
     use capnp::schema_capnp::field;
     let st = match node_reader.which()? {
         schema_capnp::node::Struct(st) => st,
-        _ => return Err(Error::failed("not a struct".into())),
+        _ => return Err(Error::failed("not a struct")),
     };
     let mut branches = vec![];
     for (index, field) in st.get_fields()?.iter().enumerate() {
@@ -1717,7 +1714,7 @@ fn annotation_branch(
     let id = annotation.get_id();
     let annotation_decl = ctx.node_map[&id];
     let node::Annotation(a) = annotation_decl.which()? else {
-        return Err(Error::failed("not an annotation node".into()));
+        return Err(Error::failed("not an annotation node"));
     };
     if annotation_decl.get_is_generic() {
         let brand = annotation.get_brand()?;
@@ -1819,7 +1816,7 @@ fn generate_members_by_discriminant(
     use capnp::schema_capnp::field;
     let st = match node_reader.which()? {
         schema_capnp::node::Struct(st) => st,
-        _ => return Err(Error::failed("not a struct".into())),
+        _ => return Err(Error::failed("not a struct")),
     };
 
     let mut union_member_indexes = vec![];
@@ -1861,7 +1858,7 @@ fn generate_members_by_name(
 ) -> ::capnp::Result<FormattedText> {
     let st = match node_reader.which()? {
         schema_capnp::node::Struct(st) => st,
-        _ => return Err(Error::failed("not a struct".into())),
+        _ => return Err(Error::failed("not a struct")),
     };
 
     let mut members_by_name = Vec::new();
@@ -3067,14 +3064,14 @@ fn generate_node(
                 }
 
                 (type_::Interface(_t), value::Interface(())) => {
-                    return Err(Error::unimplemented("interface constants".to_string()));
+                    return Err(Error::unimplemented("interface constants"));
                 }
                 (type_::AnyPointer(_), value::AnyPointer(_pr)) => {
-                    return Err(Error::unimplemented("anypointer constants".to_string()));
+                    return Err(Error::unimplemented("anypointer constants"));
                 }
 
                 _ => {
-                    return Err(Error::failed("type does not match value".to_string()));
+                    return Err(Error::failed("type does not match value"));
                 }
             };
 

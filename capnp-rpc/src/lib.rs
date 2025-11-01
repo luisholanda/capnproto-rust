@@ -277,7 +277,7 @@ impl<VatId> RpcSystem<VatId> {
         handle.add(network.drive_until_shutdown().map(move |r| {
             let r = match r {
                 Ok(()) => Ok(()),
-                Err(e) if e.kind == capnp::ErrorKind::Disconnected => Ok(()),
+                Err(e) if e.kind() == capnp::ErrorKind::Disconnected => Ok(()),
                 Err(e) => Err(e),
             };
 

@@ -105,13 +105,12 @@ where
 
         *next_id += 1;
 
-        Promise::from_future(
-            rx.map_err(|_| Error::failed("SenderQueue canceled".into()))
-                .map(move |out| {
-                    drop(remover);
-                    out
-                }),
-        )
+        Promise::from_future(rx.map_err(|_| Error::failed("SenderQueue canceled")).map(
+            move |out| {
+                drop(remover);
+                out
+            },
+        ))
     }
 
     /// Pushes `values` to the queue.

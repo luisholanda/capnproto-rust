@@ -112,7 +112,7 @@ where
         let c = self.clone();
         let generation = self.inner.borrow().generation;
         Promise::from_future(promise.map_err(move |err| {
-            if err.kind == capnp::ErrorKind::Disconnected
+            if err.kind() == capnp::ErrorKind::Disconnected
                 && generation == c.inner.borrow().generation
             {
                 let mut inner = c.inner.borrow_mut();

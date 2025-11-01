@@ -144,7 +144,7 @@ impl ResultsHook for Results {
         root2.set_as(root.into_reader())?;
         let hook = Box::new(ResultsDone::new(message2, cap_table2)) as Box<dyn ResultsDoneHook>;
         let Some(sender) = self.pipeline_sender.take() else {
-            return Err(Error::failed("set_pipeline() called twice".into()));
+            return Err(Error::failed("set_pipeline() called twice"));
         };
         sender.complete(Box::new(Pipeline::new(hook)));
         Ok(())

@@ -76,12 +76,12 @@ impl<R: Rng> Filler<R> {
                 if let TypeVariant::List(element_type) = annotation.get_type().which() {
                     if !element_type.loose_equals(field.get_type()) {
                         return Err(::capnp::Error::failed(
-                            "choices annotation element type mismatch".into(),
+                            "choices annotation element type mismatch",
                         ));
                     }
                 } else {
                     return Err(::capnp::Error::failed(
-                        "choices annotation was not of List type".into(),
+                        "choices annotation was not of List type",
                     ));
                 }
                 let choices: capnp::dynamic_list::Reader<'_> = annotation.get_value()?.downcast();

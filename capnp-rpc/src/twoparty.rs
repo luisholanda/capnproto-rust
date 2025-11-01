@@ -251,7 +251,7 @@ where
     {
         let (fulfiller, disconnect_promise) = oneshot::channel();
         let disconnect_promise =
-            disconnect_promise.map_err(|_| ::capnp::Error::disconnected("disconnected".into()));
+            disconnect_promise.map_err(|_| ::capnp::Error::disconnected("disconnected"));
 
         let (execution_driver, sender) = {
             let (tx, write_queue) = ::capnp_futures::write_queue(output_stream);

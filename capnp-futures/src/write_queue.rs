@@ -128,7 +128,7 @@ where
 
         let _ = self.sender.unbounded_send(Item::Message(message, complete));
 
-        oneshot.map_err(|oneshot::Canceled| Error::disconnected("WriteQueue has terminated".into()))
+        oneshot.map_err(|oneshot::Canceled| Error::disconnected("WriteQueue has terminated"))
     }
 
     /// Returns the number of messages queued to be written.
@@ -153,7 +153,6 @@ where
 
         let _ = self.sender.unbounded_send(Item::Done(result, complete));
 
-        receiver
-            .map_err(|oneshot::Canceled| Error::disconnected("WriteQueue has terminated".into()))
+        receiver.map_err(|oneshot::Canceled| Error::disconnected("WriteQueue has terminated"))
     }
 }
